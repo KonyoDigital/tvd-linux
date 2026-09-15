@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Start (or report) the guest seat. Idempotent: never starts a second one.
+set -uo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PORT="${GUEST_PORT:-18772}"
+URL="http://127.0.0.1:${PORT}"
+PIDFILE="$ROOT/guest_bridge.pid"
+
+if curl -sS -m 2 -o /dev/null "$URL/" 2>/dev/null; then
+  echo "guest already up at $URL"; exit 0
+fi
+# ⚠ BY PORT, NEVER BY PROCESS NAME. `pkill -f guest_bridge` would also match this script and any
+# editor holding the file open; another agent may be mid-run on this box.
+if command -v fuser >/dev/null 2>&1; then fuser -k "${PORT}/tcp" 2>/dev/null || true; sleep 0.3; fi
+nohup python3 "$ROOT/guest_bridge.py" >>"$ROOT/guest_bridge.log" 2>&1 &
+echo $! >"$PIDFILE"
+for _ in $(seq 1 12); do
+  curl -sS -m 1 -o /dev/null "$URL/" 2>/dev/null && { echo "started pid=$(cat "$PIDFILE") $URL"; exit 0; }
+  sleep 0.3
+done
+echo "FAIL: the seat did not answer $URL — see $ROOT/guest_bridge.log" >&2; exit 1

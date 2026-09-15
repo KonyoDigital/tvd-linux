@@ -1,0 +1,14 @@
+[Unit]
+Description=TV DIABLO — Grok guest seat (read-only mirror on 127.0.0.1:18772)
+After=network.target
+
+[Service]
+Type=simple
+# loopback only, read-only by construction: no write method, no subprocess, no write-mode open.
+ExecStart=/usr/bin/python3 %h/tvd-linux/guest_bridge.py
+Restart=on-failure
+RestartSec=3
+Environment=GUEST_PORT=18772
+
+[Install]
+WantedBy=default.target

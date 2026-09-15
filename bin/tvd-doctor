@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Must pass before any drive. Prints a verdict per line and exits non-zero on the first that fails.
+set -uo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PORT="${GUEST_PORT:-18772}"
+URL="http://127.0.0.1:${PORT}"
+MIRROR="${GUEST_MIRROR:-$ROOT/api-live}"
+rc=0
+
+s=$(curl -sS -m 4 -o /dev/null -w '%{http_code}' "$URL/" 2>/dev/null || echo 000)
+[ "$s" = "200" ] && echo "✅ seat answers at $URL" || { echo "❌ seat did not answer ($s) — bin/tvd-guest"; rc=1; }
+
+nick=$(curl -sS -m 4 "$URL/api/status" 2>/dev/null \
+      | python3 -c "import sys,json;print((json.load(sys.stdin).get('identity') or {}).get('nickname',''))" 2>/dev/null)
+[ "$nick" = "Grok" ] && echo "✅ identity is Grok, not the owner" || { echo "❌ identity is '${nick:-unreadable}', expected Grok"; rc=1; }
+
+# ⚠ a REFUSED write is the pass here, not a 200.
+w=$(curl -sS -m 4 -o /dev/null -w '%{http_code}' -X POST "$URL/api/vault_apply" 2>/dev/null || echo 000)
+[ "$w" = "405" ] && echo "✅ writes are refused (405) — the seat cannot change what he owns" \
+                 || { echo "❌ a write returned $w, expected 405"; rc=1; }
+
+if [ -d "$MIRROR" ]; then
+  n=$(python3 - "$MIRROR" <<'PYD' 2>/dev/null || echo 0
+import json,os,sys
+p=os.path.join(sys.argv[1],"api","sessions.json")
+try:
+    d=json.load(open(p,encoding="utf-8"))
+    print(0 if d.get("unreadable") else len(d.get("sessions") or []))
+except Exception: print(0)
+PYD
+)
+  # ⚠ 0 sessions is NOT a pass. "do not claim smooth on hollow data" — the audit's own words.
+  [ "${n:-0}" -gt 0 ] && echo "✅ mirror carries $n session(s)" \
+                      || { echo "❌ mirror has 0 sessions — SHELF would paint hollow. Sync from the Mac."; rc=1; }
+else
+  echo "❌ no mirror at $MIRROR — on the Mac: bash tv/sync_guest_api.sh --to-box"; rc=1
+fi
+exit $rc
