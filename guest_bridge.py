@@ -2,17 +2,21 @@
 # -*- coding: utf-8 -*-
 """THE GUEST BRIDGE — TV DIABLO's Linux seat, served read-only from a mirror.
 
-Grok Bot drives TV DIABLO on this machine at http://127.0.0.1:18772/ against a MIRROR of the owner's
+This machine drives TV DIABLO at http://127.0.0.1:18772/ against a MIRROR of the owner's
 live console. It never reaches his Mac, and it cannot write anything anywhere.
+
+The actor this seat reports as is CONFIG, not a hardcoded Grok label. Default is Cursor
+(fleet machine `cursor`). The Grok / guest:true profile is opt-in via env / seat.env.
 
 ═══ WHAT THIS IS NOT ══════════════════════════════════════════════════════════════════════════
 
 It is NOT the console. The console is ~57 interlocked Python modules in `d2r-bible-tests/tv/`,
 and copying it here would make two consoles that must stay in step and eventually would not.
-This serves static, already-scrubbed JSON and HTML that the Mac produced.
+This serves static, already-scrubbed JSON and HTML that the Mac produced — plus UI chrome
+staged from the pinned console when a JSON-only seed did not include it.
 
     Mac:  bash tv/sync_guest_api.sh --to-box     ->  api-live/
-    Here: this bridge serves api-live/ at :18772
+    Here: bin/tvd-stage-ui then this bridge serves api-live/ at :18772
 
 ═══ READ-ONLY BY CONSTRUCTION, NOT BY INTENTION ═══════════════════════════════════════════════
 
@@ -26,6 +30,7 @@ answers with an explicit `NEED_SYNC` record rather than `{}` or `[]`. An empty v
 unsynced vault look identical on screen and only one of them means "you own nothing" — the guest
 reported exactly that confusion before this existed. [[zero-needs-a-denominator]]
 """
+import hashlib
 import http.server
 import io
 import json
@@ -36,27 +41,71 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 MIRROR = os.environ.get("GUEST_MIRROR", os.path.join(ROOT, "api-live"))
 PORT = int(os.environ.get("GUEST_PORT", "18772"))
-
-# The actor this seat reports as. Must match the Mac's tv/guest_profile.py — the box doctor
-# asserts identity.nickname == "Grok".
-GROK = {
-    "id": "4af27ed51bf8693eaa3c19df86fc7b67",
-    "computer": "grok-bot",
-    "user": "grok",
-    "platform": "linux",
-    "createdAt": "2026-09-15T00:00:00",
-    "nickname": "Grok",
-    "guest": True,
-}
+VENDOR = os.path.join(ROOT, "vendor", "d2r-bible-tests")
 
 ALLOWED_SUFFIX = (".json", ".html", ".jpg", ".png", ".css", ".js", ".svg", ".ico")
+
+_SEAT_ENV_LOADED = False
+
+
+def _truthy(val):
+    return str(val or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _load_seat_env():
+    """Load repo-root seat.env into os.environ without overriding a real environment."""
+    global _SEAT_ENV_LOADED
+    if _SEAT_ENV_LOADED:
+        return
+    _SEAT_ENV_LOADED = True
+    path = os.path.join(ROOT, "seat.env")
+    if not os.path.isfile(path):
+        return
+    with io.open(path, encoding="utf-8") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = val
+
+
+def seat_identity():
+    """The actor this seat reports as. Env / seat.env win; Cursor is the default.
+
+    Grok / grok-bot / guest:true is the original Grok Bot profile — set it explicitly,
+    do not inherit it as a lie on a Cursor box.
+    """
+    _load_seat_env()
+    computer = (os.environ.get("GUEST_COMPUTER") or "cursor").strip() or "cursor"
+    nickname = (os.environ.get("GUEST_NICKNAME") or "Cursor").strip() or "Cursor"
+    user = (os.environ.get("GUEST_USER") or computer).strip() or computer
+    platform = (os.environ.get("GUEST_PLATFORM") or "linux").strip() or "linux"
+    ident_id = (os.environ.get("GUEST_ID") or "").strip()
+    if not ident_id:
+        ident_id = hashlib.sha256(
+            ("tv-diablo-guest-seat/%s/v1" % computer).encode("utf-8")
+        ).hexdigest()[:32]
+    return {
+        "id": ident_id,
+        "computer": computer,
+        "user": user,
+        "platform": platform,
+        "createdAt": "2026-09-15T00:00:00",
+        "nickname": nickname,
+        "guest": _truthy(os.environ.get("GUEST_SEAT_GUEST", "0")),
+    }
 
 
 def _need_sync(what):
     return {
         "ok": False, "guest": True, "unreadable": True, "needSync": True, "what": what,
         "why": ("this guest has no mirror for %s yet — run `bash tv/sync_guest_api.sh --to-box` "
-                "on the Mac. This is NOT an empty result: nothing has been read here." % what),
+                "on the Mac, then `bin/tvd-stage-ui` here. This is NOT an empty result: "
+                "nothing has been read here." % what),
     }
 
 
@@ -65,6 +114,27 @@ def _safe(rel):
     p = os.path.realpath(os.path.join(MIRROR, rel.lstrip("/")))
     root = os.path.realpath(MIRROR)
     return p if (p == root or p.startswith(root + os.sep)) else None
+
+
+def _vendor_file(*rel_parts):
+    """Public UI chrome from the pinned console — never a path the caller chose."""
+    vendor_root = os.path.realpath(VENDOR)
+    p = os.path.realpath(os.path.join(VENDOR, *rel_parts))
+    if not p.startswith(vendor_root + os.sep):
+        return None
+    return p if os.path.isfile(p) else None
+
+
+def _ui_path(mirror_name, vendor_candidates):
+    """Mirror file first (Mac-synced board is scrubbed live HTML); vendor pin if the seed was JSON-only."""
+    p = _safe(mirror_name)
+    if p and os.path.isfile(p):
+        return p
+    for rel in vendor_candidates:
+        vp = _vendor_file(*rel.split("/"))
+        if vp:
+            return vp
+    return None
 
 
 class Bridge(http.server.BaseHTTPRequestHandler):
@@ -107,9 +177,8 @@ class Bridge(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         path = (self.path or "/").split("?", 1)[0].split("#", 1)[0]
 
-        # identity is answered from THIS file, never from the mirror: the doctor's whole job is to
-        # prove the seat is Grok, and a mirror that failed to sync must not be able to make it
-        # answer as someone else.
+        # identity is answered from THIS process, never from the mirror: a mirror that failed
+        # to sync must not be able to make the seat answer as someone else. The actor is env.
         if path == "/api/status":
             p = _safe("api/status.json")
             out = {}
@@ -123,22 +192,23 @@ class Bridge(http.server.BaseHTTPRequestHandler):
                 out = {}
             if not out:
                 out = _need_sync("api/status")
-            out["identity"] = dict(GROK)
-            out["guest"] = True
+            ident = seat_identity()
+            out["identity"] = dict(ident)
+            out["guest"] = bool(ident.get("guest"))
             self._json(200, out)
             return
 
         if path in ("/", "/index.html", "/control_ui.html"):
-            p = _safe("control_ui.html")
-            if p and os.path.isfile(p):
+            p = _ui_path("control_ui.html", ("tv/control_ui.html",))
+            if p:
                 self._file(p, "text/html; charset=utf-8")
             else:
                 self._json(503, _need_sync("control_ui.html"))
             return
 
         if path in ("/board", "/board.html"):
-            p = _safe("board.html")
-            if p and os.path.isfile(p):
+            p = _ui_path("board.html", ("tv/board.html", "bible.html"))
+            if p:
                 self._file(p, "text/html; charset=utf-8")
             else:
                 self._json(503, _need_sync("board.html"))
@@ -171,13 +241,17 @@ class Server(socketserver.ThreadingTCPServer):
 
 
 def main():
+    _load_seat_env()
+    ident = seat_identity()
     if not os.path.isdir(MIRROR):
         sys.stderr.write("[guest] no mirror at %s — serving NEED_SYNC for everything.\n"
                          "        On the Mac: bash tv/sync_guest_api.sh --to-box\n" % MIRROR)
     # loopback only: this seat is for the eyes on THIS box, never for the network
     with Server(("127.0.0.1", PORT), Bridge) as httpd:
-        sys.stderr.write("[guest] TV DIABLO guest seat on http://127.0.0.1:%d/  (mirror: %s)\n"
-                         % (PORT, MIRROR))
+        sys.stderr.write("[guest] TV DIABLO Linux seat on http://127.0.0.1:%d/  (mirror: %s)\n"
+                         "        identity: %s / %s  guest=%s\n"
+                         % (PORT, MIRROR, ident.get("nickname"), ident.get("computer"),
+                            ident.get("guest")))
         httpd.serve_forever()
 
 

@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+# Stage the HTML the guest bridge serves, and put sessions.json where the doctor reads it.
+#
+# The Mac sync currently mirrors JSON + (if live answered) a scrubbed board.html.
+# It does NOT copy control_ui.html. A JSON-only seed therefore leaves :18772 at 503.
+# This fills the gaps from the pinned console and never overwrites a Mac-synced board.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+MIRROR="${GUEST_MIRROR:-$ROOT/api-live}"
+VENDOR="${GUEST_VENDOR:-$ROOT/vendor/d2r-bible-tests}"
+mkdir -p "$MIRROR/api"
+
+staged=0
+
+# control_ui.html lives in tv/. Always refresh from the pin: it is public UI chrome,
+# not owner data, and rsync --delete on a JSON-only mirror would wipe a previous copy.
+if [ -f "$VENDOR/tv/control_ui.html" ]; then
+  cp -f "$VENDOR/tv/control_ui.html" "$MIRROR/control_ui.html"
+  echo "   staged control_ui.html from vendor/tv/"
+  staged=1
+else
+  echo "   ⚠ no vendor/tv/control_ui.html — pin the console first (bash install.sh)"
+fi
+
+# board.html: prefer a Mac-synced (scrubbed live) copy. If the seed had JSON only,
+# fall back to the pinned bible.html (the file live /board serves).
+if [ -f "$MIRROR/board.html" ] && [ -s "$MIRROR/board.html" ]; then
+  echo "   kept existing board.html (Mac-synced board is preferred)"
+else
+  src=""
+  if [ -f "$VENDOR/tv/board.html" ]; then
+    src="$VENDOR/tv/board.html"
+  elif [ -f "$VENDOR/bible.html" ]; then
+    src="$VENDOR/bible.html"
+  fi
+  if [ -n "$src" ]; then
+    cp -f "$src" "$MIRROR/board.html"
+    echo "   staged board.html from ${src#"$VENDOR"/}"
+    staged=1
+  else
+    echo "   ⚠ no board.html source — Mac sync should include it (tv/sync_guest_api.sh --to-box)"
+  fi
+fi
+
+# Doctor reads api-live/api/sessions.json. JSON-only seeds sometimes land sessions.json
+# at the mirror root (or one extra api-live/ wrap). Normalize, never invent data.
+if [ ! -s "$MIRROR/api/sessions.json" ]; then
+  found=""
+  for cand in \
+      "$MIRROR/sessions.json" \
+      "$MIRROR/api-live/api/sessions.json" \
+      "$MIRROR/api-live/sessions.json"
+  do
+    if [ -s "$cand" ]; then
+      found="$cand"
+      break
+    fi
+  done
+  if [ -z "$found" ]; then
+    found="$(find "$MIRROR" -maxdepth 3 -type f -name sessions.json -size +20c 2>/dev/null | head -n 1 || true)"
+  fi
+  if [ -n "$found" ]; then
+    mkdir -p "$MIRROR/api"
+    cp -f "$found" "$MIRROR/api/sessions.json"
+    echo "   normalized $(realpath --relative-to="$MIRROR" "$found" 2>/dev/null || echo "$found") -> api/sessions.json"
+    staged=1
+  else
+    echo "   ⚠ no sessions.json yet — SHELF stays hollow until the Mac sync (or a seed) lands"
+  fi
+else
+  echo "   sessions.json already at api/sessions.json"
+fi
+
+[ "$staged" -eq 1 ] || true
+exit 0

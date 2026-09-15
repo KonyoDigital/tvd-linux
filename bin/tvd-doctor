@@ -2,17 +2,31 @@
 # Must pass before any drive. Prints a verdict per line and exits non-zero on the first that fails.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+if [ -f "$ROOT/seat.env" ]; then
+  set -a
+  # shellcheck disable=SC1091
+  . "$ROOT/seat.env"
+  set +a
+fi
 PORT="${GUEST_PORT:-18772}"
 URL="http://127.0.0.1:${PORT}"
 MIRROR="${GUEST_MIRROR:-$ROOT/api-live}"
+EXPECT_NICK="${GUEST_NICKNAME:-Cursor}"
 rc=0
 
 s=$(curl -sS -m 4 -o /dev/null -w '%{http_code}' "$URL/" 2>/dev/null || echo 000)
-[ "$s" = "200" ] && echo "✅ seat answers at $URL" || { echo "❌ seat did not answer ($s) — bin/tvd-guest"; rc=1; }
+[ "$s" = "200" ] && echo "✅ seat answers at $URL" || { echo "❌ seat did not answer ($s) — bin/tvd-guest (needs control_ui.html staged)"; rc=1; }
 
 nick=$(curl -sS -m 4 "$URL/api/status" 2>/dev/null \
       | python3 -c "import sys,json;print((json.load(sys.stdin).get('identity') or {}).get('nickname',''))" 2>/dev/null)
-[ "$nick" = "Grok" ] && echo "✅ identity is Grok, not the owner" || { echo "❌ identity is '${nick:-unreadable}', expected Grok"; rc=1; }
+[ "$nick" = "$EXPECT_NICK" ] && echo "✅ identity is $EXPECT_NICK, not the owner" \
+  || { echo "❌ identity is '${nick:-unreadable}', expected $EXPECT_NICK (set GUEST_NICKNAME / seat.env)"; rc=1; }
+
+guest=$(curl -sS -m 4 "$URL/api/status" 2>/dev/null \
+      | python3 -c "import sys,json;d=json.load(sys.stdin);print((d.get('identity') or {}).get('guest', d.get('guest','')))" 2>/dev/null)
+expect_guest=$(python3 -c "import os;v=os.environ.get('GUEST_SEAT_GUEST','0').strip().lower();print('True' if v in ('1','true','yes','on') else 'False')")
+[ "$guest" = "$expect_guest" ] && echo "✅ identity.guest=$guest" \
+  || { echo "❌ identity.guest is '${guest:-unreadable}', expected $expect_guest (GUEST_SEAT_GUEST; Cursor defaults to false)"; rc=1; }
 
 # ⚠ a REFUSED write is the pass here, not a 200.
 w=$(curl -sS -m 4 -o /dev/null -w '%{http_code}' -X POST "$URL/api/vault_apply" 2>/dev/null || echo 000)
@@ -31,7 +45,7 @@ PYD
 )
   # ⚠ 0 sessions is NOT a pass. "do not claim smooth on hollow data" — the audit's own words.
   [ "${n:-0}" -gt 0 ] && echo "✅ mirror carries $n session(s)" \
-                      || { echo "❌ mirror has 0 sessions — SHELF would paint hollow. Sync from the Mac."; rc=1; }
+                      || { echo "❌ mirror has 0 sessions at $MIRROR/api/sessions.json — SHELF would paint hollow. Sync from the Mac, then bin/tvd-stage-ui."; rc=1; }
 else
   echo "❌ no mirror at $MIRROR — on the Mac: bash tv/sync_guest_api.sh --to-box"; rc=1
 fi

@@ -8,6 +8,9 @@ fixtures/
 seed_progress.json
 verify-evidence/
 
+# local identity override (copy seat.env.example)
+seat.env
+
 # the pinned console checkout — cloned by install.sh, never vendored into history
 vendor/
 
