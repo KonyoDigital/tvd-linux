@@ -3,7 +3,7 @@
 A Linux box that can **look at** TV DIABLO: open THE SHELF, click a session, scrub a reel, open
 the VAULT — against real data, without touching the Mac that owns it.
 
-Built so Grok Bot's eyes can run standing verification on this machine, and so **other people can
+Built so the visual agent's eyes can run standing verification on this machine, and so **other people can
 work on the Linux side** without going through the main repo's 12-minute publish gate.
 
 ---
@@ -22,7 +22,7 @@ the docs. That is the whole Linux-specific surface, and it is all anyone needs t
 ## Install
 
 ```bash
-git clone https://github.com/KonyoDigital/tvd-linux.git
+git clone https://github.com/the ownerDigital/tvd-linux.git
 cd tvd-linux && bash install.sh          # deps + pin the console + self-test
 bin/tvd-guest                            # start the seat on 127.0.0.1:18772
 bin/tvd-doctor                           # must be green before any drive

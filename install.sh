@@ -4,7 +4,7 @@
 #   CONSOLE_REF=v3189 bash install.sh
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-CONSOLE_REPO="${CONSOLE_REPO:-https://github.com/KonyoDigital/d2r-bible-tests.git}"
+CONSOLE_REPO="${CONSOLE_REPO:-https://github.com/the ownerDigital/d2r-bible-tests.git}"
 CONSOLE_REF="${CONSOLE_REF:-main}"
 
 echo "── system deps (pywebview needs GTK + WebKit; the bridge needs only python3)"

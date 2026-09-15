@@ -1,5 +1,5 @@
 # ══ NEVER COMMITTED — this is a PUBLIC repo ══════════════════════════════════════════════════
-# The mirror, the seed and the fixture packs are cut from Konyo's LIVE console: his ledger, his
+# The mirror, the seed and the fixture packs are cut from the owner's LIVE console: his ledger, his
 # sessions, and real frames of his game. They are scrubbed of his MACHINE's identifiers, which is
 # not the same as being his to publish. They travel to this box by rsync, never by git.
 api-live/

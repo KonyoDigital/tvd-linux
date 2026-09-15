@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """THE GUEST BRIDGE — TV DIABLO's Linux seat, served read-only from a mirror.
 
-Grok Bot drives TV DIABLO on this machine at http://127.0.0.1:18772/ against a MIRROR of Konyo's
+Grok Bot drives TV DIABLO on this machine at http://127.0.0.1:18772/ against a MIRROR of the owner's
 live console. It never reaches his Mac, and it cannot write anything anywhere.
 
 ═══ WHAT THIS IS NOT ══════════════════════════════════════════════════════════════════════════
@@ -18,7 +18,7 @@ This serves static, already-scrubbed JSON and HTML that the Mac produced.
 
 ⚠ There is no write path in this file at all: no POST, no PUT, no DELETE, no subprocess, no file
 open in any write mode. A guest seat that could register an item or delete a reel would let an
-eyes-loop change what Konyo owns, and footage has no un-delete. The Mac's sync refuses to mirror
+eyes-loop change what the owner owns, and footage has no un-delete. The Mac's sync refuses to mirror
 a write endpoint; this refuses to serve a write METHOD. Two locks, different keys.
 
 ⚠ AND AN ABSENT MIRROR IS SAID OUT LOUD. If `api-live/` has not been synced, every endpoint
