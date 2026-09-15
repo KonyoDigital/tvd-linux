@@ -35,14 +35,42 @@ _apt() {
       "$@"
 }
 
+_have_bridge_deps() {
+  # Pin + stage + serve. GTK/WebKit are for a local window, not the bridge.
+  command -v python3 >/dev/null 2>&1 && \
+    command -v git >/dev/null 2>&1 && \
+    command -v rsync >/dev/null 2>&1
+}
+
+_apt_update() {
+  # Debian mirrors 502 mid-`apt update` must not abort a re-run when deps are already in.
+  local n
+  for n in 1 2 3; do
+    if _apt update -qq; then
+      return 0
+    fi
+    echo "   ⚠ apt update failed (try $n/3) — Debian mirrors sometimes 502. Retrying..."
+    sleep $((n * 2))
+  done
+  echo "   ⚠ apt update still failing after 3 tries — not aborting; will install from cache or continue if python3/git/rsync are already present."
+  return 1
+}
+
 echo "── system deps (pywebview needs GTK + WebKit; the bridge needs only python3)"
 if command -v apt-get >/dev/null 2>&1; then
   sudo DEBIAN_FRONTEND=noninteractive dpkg --configure -a || true
-  _apt update -qq
-  _apt install python3 python3-pip python3-gi gir1.2-gtk-3.0 \
+  _apt_update || true
+  if _apt install python3 python3-pip python3-gi gir1.2-gtk-3.0 \
        gir1.2-webkit2-4.1 libcairo2-dev rsync git || \
-  _apt install python3 python3-pip python3-gi gir1.2-gtk-3.0 \
-       gir1.2-webkit2-4.0 libcairo2-dev rsync git
+     _apt install python3 python3-pip python3-gi gir1.2-gtk-3.0 \
+       gir1.2-webkit2-4.0 libcairo2-dev rsync git; then
+    :
+  elif _have_bridge_deps; then
+    echo "   ⚠ apt install failed, but python3/git/rsync are already present — continuing (pin → stage → guest → doctor)"
+  else
+    echo "   ❌ apt could not install deps and python3/git/rsync are missing"
+    exit 1
+  fi
 elif command -v dnf >/dev/null 2>&1; then
   sudo dnf install -y python3 python3-pip python3-gobject gtk3 webkit2gtk4.1 rsync git
 else

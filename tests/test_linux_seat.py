@@ -42,6 +42,18 @@ class InstallSh(unittest.TestCase):
         self.assertIn("force-confdef", src)
         self.assertIn("dpkg --configure -a", src)
 
+    def test_apt_update_retries_then_continues_when_deps_present(self):
+        src = _read("install.sh")
+        self.assertIn("_apt_update", src)
+        self.assertIn("try $n/3", src)
+        self.assertIn("_apt_update || true", src)
+        self.assertIn("_have_bridge_deps", src)
+        self.assertIn("already present — continuing", src)
+        self.assertIn("python3/git/rsync are missing", src)
+        readme = _read("README.md")
+        self.assertIn("502", readme)
+        self.assertIn("does **not** abort", readme)
+
     def test_install_stages_ui_and_starts_the_seat(self):
         src = _read("install.sh")
         self.assertIn("bin/tvd-stage-ui", src)

@@ -30,7 +30,9 @@ bin/tvd-doctor                           # must be green before any drive
 ```
 
 `install.sh` is **noninteractive by default** (`DEBIAN_FRONTEND=noninteractive`, apt
-`force-confdef`/`force-confold`). It will not hang on `fuse.conf`. Pin a known console with
+`force-confdef`/`force-confold`). It will not hang on `fuse.conf`. `apt update` retries on a
+transient Debian-mirror **502** and does **not** abort the rest of install (pin → stage → guest)
+if `python3`, `git` and `rsync` are already present. Pin a known console with
 `CONSOLE_REF=<sha-or-branch> bash install.sh` (v3189 is commit `9f4f1d0e4c1e189cb83abbaf5c43b874de8819a5`
 on `KonyoDigital/d2r-bible-tests`).
 
