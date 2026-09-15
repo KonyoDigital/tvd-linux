@@ -14,19 +14,27 @@ work on the Linux side** without going through the main repo's 12-minute publish
 A copy here would be a second console that must stay in step with the first and eventually would
 not — so `install.sh` **pins** it into `vendor/` (gitignored) instead. One source, upstream.
 
-**This repo owns:** the launcher, the systemd unit, the read-only guest bridge, the doctor, and
-the docs. That is the whole Linux-specific surface, and it is all anyone needs to contribute to.
+**This repo owns:** the launcher, the systemd unit, the read-only guest bridge, the doctor, the
+UI staging step, and the docs. That is the whole Linux-specific surface, and it is all anyone
+needs to contribute to.
 
 ---
 
-## Install
+## Install (fresh box)
 
 ```bash
-git clone https://github.com/the ownerDigital/tvd-linux.git
-cd tvd-linux && bash install.sh          # deps + pin the console + self-test
+git clone https://github.com/KonyoDigital/tvd-linux.git
+cd tvd-linux && bash install.sh          # noninteractive deps + pin + stage UI + self-test
 bin/tvd-guest                            # start the seat on 127.0.0.1:18772
 bin/tvd-doctor                           # must be green before any drive
 ```
+
+`install.sh` is **noninteractive by default** (`DEBIAN_FRONTEND=noninteractive`, apt
+`force-confdef`/`force-confold`). It will not hang on `fuse.conf`. Pin a known console with
+`CONSOLE_REF=<sha-or-branch> bash install.sh` (v3189 is commit `9f4f1d0e4c1e189cb83abbaf5c43b874de8819a5`
+on `KonyoDigital/d2r-bible-tests`).
+
+Seat laws (no network, no apt): `python3 -m unittest tests.test_linux_seat -v`
 
 Run it at boot:
 
@@ -35,17 +43,67 @@ mkdir -p ~/.config/systemd/user && cp systemd/tvd-guest.service ~/.config/system
 systemctl --user enable --now tvd-guest
 ```
 
+If the clone is not at `~/tvd-linux`, edit `ExecStart` / `EnvironmentFile` in the unit to match.
+
 ---
 
-## Feeding it — on the **Mac**, not here
+## Feeding it — on the **Mac**, then one restage here
 
 ```bash
-GUEST_BOX_HOST=<this-box> bash tv/sync_guest_api.sh --to-box
+GUEST_BOX_HOST=<this-box> GUEST_BOX_PATH=<clone>/api-live bash tv/sync_guest_api.sh --to-box
 ```
+
+Then on this box:
+
+```bash
+bin/tvd-guest && bin/tvd-doctor
+```
+
+`tvd-guest` runs `bin/tvd-stage-ui` first. That is required: the Mac script mirrors JSON (and a
+scrubbed `board.html` when live `/board` answered) but **does not copy `control_ui.html`**. A
+JSON-only seed therefore left the bridge serving 503 for `/`. Staging copies:
+
+| dest | source |
+|---|---|
+| `api-live/control_ui.html` | `vendor/d2r-bible-tests/tv/control_ui.html` (always) |
+| `api-live/board.html` | kept if already present; else `vendor/.../bible.html` (live `/board`) |
+| `api-live/api/sessions.json` | moved here if the seed dropped `sessions.json` at the mirror root |
+
+The doctor reads **nested** `api-live/api/sessions.json`. `rsync --delete` from a JSON-only Mac
+mirror can wipe staged HTML; starting `bin/tvd-guest` puts it back.
 
 That mirrors the read-only endpoints, scrubs every one of the owner's machine identifiers,
 restages the fixture packs, runs a leak gate, and only then copies. Measured on a real run:
 **12 endpoints, 419 sessions, 300 tombstone rows**, clean against 7 secrets.
+
+---
+
+## Identity — Cursor by default, Grok only when selected
+
+The bridge used to hardcode `Grok` / `grok-bot` / `guest: true`. That is the **Grok Bot** box,
+not this seat. Default actor is **Cursor** / `cursor` / `guest: false`.
+
+Override with env or a repo-root `seat.env` (copy `seat.env.example`; gitignored):
+
+```bash
+# Cursor (default) — fleet machine `cursor`
+GUEST_NICKNAME=Cursor GUEST_COMPUTER=cursor GUEST_SEAT_GUEST=0 bin/tvd-guest
+
+# Grok guest profile — only when that seat is intentionally selected
+GUEST_NICKNAME=Grok GUEST_COMPUTER=grok-bot GUEST_USER=grok GUEST_SEAT_GUEST=1 bin/tvd-guest
+```
+
+`bin/tvd-doctor` asserts the configured nickname and `identity.guest`, not a hardcoded Grok label.
+
+To appear in THE FLEET under a nickname on a machine that runs the **full** console (`:17772`,
+not this read-only bridge):
+
+```bash
+curl -X POST http://127.0.0.1:17772/api/identity_name \
+  -H 'Content-Type: application/json' -d '{"name":"Cursor"}'
+```
+
+The guest bridge on `:18772` refuses that POST (405). Its identity is env / `seat.env` only.
 
 ---
 
@@ -71,26 +129,31 @@ data and calling it smooth is the thing this seat exists to avoid.
 
 ---
 
-## What this box shows as
+## Diablo — re-run install / doctor / eyes
 
-A stable Grok actor: `Grok` / `grok-bot` / `guest: true`. The board itself runs in the **isolated
-non-Mac world** — a seeded copy that can diverge freely (own less, own more) without ever
-reaching the owner's namespace. Seed it from `seed_progress.json` via the board's own
-**Tools → Backup → Import**.
-
-To appear in THE FLEET as `Grok` rather than this machine's hostname, on this box's **own**
-console:
+On this box:
 
 ```bash
-curl -X POST http://127.0.0.1:17772/api/identity_name \
-  -H 'Content-Type: application/json' -d '{"name":"Grok"}'
+cd <clone>
+bash install.sh                 # safe to re-run; noninteractive; restages UI
+bin/tvd-guest                   # restage HTML + listen on 127.0.0.1:18772
+bin/tvd-doctor                  # all green, then eyes
 ```
+
+On the Mac, once per seed (or whenever live should refresh the mirror):
+
+```bash
+GUEST_BOX_HOST=<this-box> GUEST_BOX_PATH=<clone>/api-live bash tv/sync_guest_api.sh --to-box
+```
+
+Then `bin/tvd-guest && bin/tvd-doctor` again here. Do not point eyes at `:18772` until doctor is
+green.
 
 ---
 
 ## Never committed
 
-`api-live/`, `guest-mirror/`, `fixtures/`, `seed_progress.json`, `verify-evidence/`.
+`api-live/`, `guest-mirror/`, `fixtures/`, `seed_progress.json`, `verify-evidence/`, `seat.env`.
 
 They are cut from the owner's live console — his ledger, his sessions, real frames of his game.
 Scrubbed of his machine's *identifiers* is not the same as being his to *publish*, and this repo

@@ -1,5 +1,5 @@
 [Unit]
-Description=TV DIABLO — Grok guest seat (read-only mirror on 127.0.0.1:18772)
+Description=TV DIABLO — Linux seat (read-only mirror on 127.0.0.1:18772)
 After=network.target
 
 [Service]
@@ -9,6 +9,11 @@ ExecStart=/usr/bin/python3 %h/tvd-linux/guest_bridge.py
 Restart=on-failure
 RestartSec=3
 Environment=GUEST_PORT=18772
+Environment=GUEST_NICKNAME=Cursor
+Environment=GUEST_COMPUTER=cursor
+Environment=GUEST_SEAT_GUEST=0
+# Optional local override (Grok guest profile, etc.). The leading '-' means missing is fine.
+EnvironmentFile=-%h/tvd-linux/seat.env
 
 [Install]
 WantedBy=default.target
